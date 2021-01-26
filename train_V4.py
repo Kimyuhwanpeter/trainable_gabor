@@ -181,7 +181,19 @@ def main():
                     print("Epoch: {} [{}/{}] total_loss = {}".format(
                         epoch, step + 1, tr_idx, loss))
 
-                if count % 100 == 0 and count != 0:
+                if count % 1000 == 0:
+                    num_ = int(count // 1000)
+                    model_dir = "%s/%s" % (FLAGS.save_checkpoint, num)
+                    if not os.path.isdir(model_dir):
+                        os.makedirs(model_dir)
+                        print("Make {} files to save checkpoint".format(num_))
+
+                    ckpt = tf.train.Checkpoint(model=model,
+                                               optim=optim)
+                    ckpt_dir = model_dir + "/" + "paper_4_age_estimation_{}.ckpt".format(count)
+                    ckpt.save(ckpt_dir)
+
+                if count % 5500 == 0 and count != 0:
                     te_iter = iter(te_gener)
                     te_idx = len(te_img_data) // 2
                     ae = 0
@@ -194,7 +206,6 @@ def main():
 
                     mae = ae / len(te_img_data)
                     print("MAE ({} steps) = {}".format(count + 1, mae))
-
 
                 count += 1
 
