@@ -18,12 +18,30 @@ def conv_relu_bn(inputs,
                  padding,
                  weight_decay):
 
-    h = Conv2D(filters=filters,
-               kernel_size=kernel_size,
+    h = Conv2D(filters=filters // 2,
+               kernel_size=1,
                strides=strides,
                padding=padding,
                use_bias=False,
                kernel_regularizer=weight_decay)(inputs)
+    h = BatchNorm()(h)
+    h = ReLU()(h)
+
+    h = Conv2D(filters=filters // 2,
+               kernel_size=kernel_size,
+               strides=strides,
+               padding=padding,
+               use_bias=False,
+               kernel_regularizer=weight_decay)(h)
+    h = BatchNorm()(h)
+    h = ReLU()(h)
+
+    h = Conv2D(filters=filters,
+               kernel_size=1,
+               strides=strides,
+               padding=padding,
+               use_bias=False,
+               kernel_regularizer=weight_decay)(h)
     h = BatchNorm()(h)
     h = ReLU()(h)
 
@@ -70,6 +88,8 @@ class gabor_filters(tf.keras.layers.Layer):
                                    initializer="random_normal",
                                    trainable=True)
 
+        ########################################################################
+        # 이렇게 하면 빌드는되지만, back propagation이 안돼는 문제가 생긴다.
         self.gaborkernel_ = np.zeros([self.kernel, self.kernel, input_shapes[3], self.filters])
         for x in range(self.kernel):
             for y in range(self.kernel):
@@ -77,28 +97,38 @@ class gabor_filters(tf.keras.layers.Layer):
                 y_ = -x * tf.sin(self.theta) + y * tf.cos(self.theta)
                 self.gaborkernel_[x, y, :, :] = tf.exp(-tf.pow(x_, 2)+tf.pow(self.gamma, 2)*tf.pow(y_, 2) \
                     / 2*tf.pow(self.gaussian_distri, 2)) * tf.cos(2*self.PI*x_/self.lamb + self.Psi)
+        ########################################################################
+
+        self.gabor_kernel = self.add_weight(shape=[self.kernel, self.kernel, input_shapes[3], self.filters],
+                                            initializer=tf.keras.initializers.Constant(self.gaborkernel_),
+                                            trainable=True)
         
-        # 이걸 랜덤하게 어떻게 만들면될까??
-
     def call(self, inputs, **kwargs):
-        h = Conv2D(filters=self.filters,
-                   kernel_size=self.kernel,
-                   padding="same",
-                   kernel_initializer=tf.keras.initializers.Constant(self.gaborkernel_))(inputs)
+        #h = Conv2D(filters=self.filters,
+        #           kernel_size=self.kernel,
+        #           strides=1,
+        #           padding="same",
+        #           kernel_initializer=tf.keras.initializers.Constant(self.gaborkernel_))(inputs)
 
+        h = tf.nn.conv2d(inputs,
+                         filters=self.gabor_kernel,
+                         strides=[1,1,1,1],
+                         padding="SAME")
         return h
 
-def generator(input_shape=(256, 256, 3), weight_decay=0.000005):
+def age_estimation_model(input_shape=(256, 256, 3), weight_decay=0.000005, num_classes=54):
 
     h = inputs = tf.keras.Input(input_shape)
 
     h = tf.keras.layers.ZeroPadding2D((3,3))(h)
-    h = conv_relu_bn(inputs=h,
-                     filters=64,
-                     kernel_size=7,
-                     strides=1,
-                     padding="valid",
-                     weight_decay=l2(weight_decay)) # [256, 256, 64]
+    h = Conv2D(filters=64,
+               kernel_size=7,
+               strides=1,
+               padding="valid",
+               use_bias=False,
+               kernel_regularizer=l2(weight_decay))(h)
+    h = BatchNorm()(h)
+    h = ReLU()(h) # [256, 256, 64]
     h = conv_relu_bn(inputs=h,
                      filters=64,
                      kernel_size=3,
@@ -107,30 +137,120 @@ def generator(input_shape=(256, 256, 3), weight_decay=0.000005):
                      weight_decay=l2(weight_decay)) # [256, 256, 64]
     h = gabor_filters(64, kernel=3)(h)  # [256, 256, 64]
     
-    h = tf.keras.layers
+    h = tf.keras.layers.ZeroPadding2D((1,1))(h)
+    h = tf.keras.layers.DepthwiseConv2D(kernel_size=3,
+                                        strides=2,
+                                        padding="valid",
+                                        use_bias=False,
+                                        depthwise_regularizer=l2(weight_decay))(h)  # [128, 128, 64]
 
-    h = conv_relu_bn(inputs=h,
+    h = residual_1 = conv_relu_bn(inputs=h,
+                     filters=128,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [128, 128, 128]   # resdual?!?!?
+    h = conv_relu_bn(inputs=h + residual_1,
                      filters=128,
                      kernel_size=3,
                      strides=1,
                      padding="same",
                      weight_decay=l2(weight_decay)) # [128, 128, 128]
-    h = conv_relu_bn(inputs=h,
+    h = conv_relu_bn(inputs=h + residual_1,
                      filters=128,
                      kernel_size=3,
                      strides=1,
                      padding="same",
                      weight_decay=l2(weight_decay)) # [128, 128, 128]
-    h = conv_relu_bn(inputs=h,
-                     filters=128,
-                     kernel_size=3,
-                     strides=1,
-                     padding="same",
-                     weight_decay=l2(weight_decay)) # [128, 128, 128]
-    h = gabor_filters(128, kernel=3)(h)  # [128, 128, 128]
+    h = gabor_filters(128, kernel=3)(h + residual_1)  # [128, 128, 128]
+    # 이 사이에 batchnorm을 쓸지 안쓸지에 대해서는 추 후 고려
+    h = tf.keras.layers.ZeroPadding2D((1,1))(h)
+    h = tf.keras.layers.DepthwiseConv2D(kernel_size=3,
+                                        strides=2,
+                                        padding="valid",
+                                        use_bias=False,
+                                        depthwise_regularizer=l2(weight_decay))(h)  # [64, 64, 128]
 
+    h = residual_2 = conv_relu_bn(inputs=h,
+                     filters=256,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [64, 64, 256]
+    h = conv_relu_bn(inputs=h + residual_2,
+                     filters=256,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [64, 64, 256]
+    h = conv_relu_bn(inputs=h + residual_2,
+                     filters=256,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [64, 64, 256]
+    h = conv_relu_bn(inputs=h + residual_2,
+                     filters=256,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [64, 64, 256]
+    h = gabor_filters(256, kernel=3)(h + residual_2)  # [64, 64, 256]
+    # 이 사이에 batchnorm을 쓸지 안쓸지에 대해서는 추 후 고려
+    h = tf.keras.layers.ZeroPadding2D((1,1))(h)
+    h = tf.keras.layers.DepthwiseConv2D(kernel_size=3,
+                                        strides=2,
+                                        padding="valid",
+                                        use_bias=False,
+                                        depthwise_regularizer=l2(weight_decay))(h)  # [32, 32, 256]
+
+    h = residual_3 = conv_relu_bn(inputs=h,
+                     filters=512,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [32, 32, 512]
+    h = conv_relu_bn(inputs=h + residual_3,
+                     filters=512,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [32, 32, 512]
+    h = conv_relu_bn(inputs=h + residual_3,
+                     filters=512,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [32, 32, 512]
+    h = gabor_filters(512, kernel=3)(h + residual_3)  # [32, 32, 512]
+    # 이 사이에 batchnorm을 쓸지 안쓸지에 대해서는 추 후 고려
+    h = tf.keras.layers.ZeroPadding2D((1,1))(h)
+    h = tf.keras.layers.DepthwiseConv2D(kernel_size=3,
+                                        strides=2,
+                                        padding="valid",
+                                        use_bias=False,
+                                        depthwise_regularizer=l2(weight_decay))(h)  # [16, 16, 512]
+
+    h = residual_4 = conv_relu_bn(inputs=h,
+                     filters=1024,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [16, 16, 1024]
+    h = conv_relu_bn(inputs=h + residual_4,
+                     filters=1024,
+                     kernel_size=3,
+                     strides=1,
+                     padding="same",
+                     weight_decay=l2(weight_decay)) # [16, 16, 1024]
+    h = gabor_filters(1024, kernel=3)(h + residual_4)  # [16, 16, 1024]
+    h = tf.keras.layers.DepthwiseConv2D(kernel_size=3,
+                                        strides=2,
+                                        padding="valid",
+                                        use_bias=False,
+                                        depthwise_regularizer=l2(weight_decay))(h)  # [16, 16, 1024]
+    h = tf.keras.layers.GlobalAveragePooling2D()(h)
+
+    h = tf.keras.layers.Dense(num_classes)(h)
 
     return tf.keras.Model(inputs=inputs, outputs=h)
-
-model = generator()
-model.summary()
