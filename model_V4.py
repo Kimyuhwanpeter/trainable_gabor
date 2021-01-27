@@ -69,22 +69,28 @@ class gabor_filters(tf.keras.layers.Layer):
 
     def build(self, input_shapes):
         # filters shape = [3, 3, input filters, output filters]
-        self.gaussian_distri = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.gaussian_distri = self.add_weight(name="gaussian_distri",
+                                               shape=[input_shapes[3], self.filters],
                                                initializer="random_normal",
                                                trainable=True)
-        self.lamb = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.lamb = self.add_weight(name="lamb",
+                                    shape=[input_shapes[3], self.filters],
                                     initializer="random_normal",
                                     trainable=True)
-        self.gamma = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.gamma = self.add_weight(name="gamma",
+                                     shape=[input_shapes[3], self.filters],
                                      initializer="random_normal",
                                      trainable=True)
-        self.theta = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.theta = self.add_weight(name="theta",
+                                     shape=[input_shapes[3], self.filters],
                                      initializer="random_normal",
                                      trainable=True)
-        self.sigma = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.sigma = self.add_weight(name="sigma",
+                                     shape=[input_shapes[3], self.filters],
                                      initializer="random_normal",
                                      trainable=True)
-        self.Psi = self.add_weight(shape=[input_shapes[3], self.filters],
+        self.Psi = self.add_weight(name="Psi",
+                                   shape=[input_shapes[3], self.filters],
                                    initializer="random_normal",
                                    trainable=True)
 
@@ -99,7 +105,8 @@ class gabor_filters(tf.keras.layers.Layer):
                     / 2*tf.pow(self.gaussian_distri, 2)) * tf.cos(2*self.PI*x_/self.lamb + self.Psi)
         ########################################################################
 
-        self.gabor_kernel = self.add_weight(shape=[self.kernel, self.kernel, input_shapes[3], self.filters],
+        self.gabor_kernel = self.add_weight(name="gabor_kernel",
+                                            shape=[self.kernel, self.kernel, input_shapes[3], self.filters],
                                             initializer=tf.keras.initializers.Constant(self.gaborkernel_),
                                             trainable=True)
         
