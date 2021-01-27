@@ -36,7 +36,7 @@ flags.DEFINE_bool("pre_checkpoint", False, "True or False")
 
 flags.DEFINE_string("pre_checkpoint_path", "", "Restored or test checkpoint path")
 
-flags.DEFINE_string("save_checkpoint", "", "Save checkpoint path")
+flags.DEFINE_string("save_checkpoint", "C:/Users/Yuhwan/Downloads", "Save checkpoint path")
 
 flags.DEFINE_bool("train", True, "True or False")
 
@@ -109,14 +109,14 @@ def cal_loss(model, images, labels):
 
     return loss
 
-@tf.function
+#@tf.function
 def cal_mae(model, images, labels):
 
     logits = model(images, False)
     proba = tf.nn.softmax(logits, 1)
     predict = tf.argmax(proba, 1, output_type=tf.int32)
 
-    ae = tf.reduce_sum(tf.abs(predict[0] - labels[0]))
+    ae = tf.reduce_sum(tf.abs(predict - labels))
 
     return ae
 
@@ -183,7 +183,7 @@ def main():
 
                 if count % 1000 == 0:
                     num_ = int(count // 1000)
-                    model_dir = "%s/%s" % (FLAGS.save_checkpoint, num)
+                    model_dir = "%s/%s" % (FLAGS.save_checkpoint, num_)
                     if not os.path.isdir(model_dir):
                         os.makedirs(model_dir)
                         print("Make {} files to save checkpoint".format(num_))
@@ -193,16 +193,17 @@ def main():
                     ckpt_dir = model_dir + "/" + "paper_4_age_estimation_{}.ckpt".format(count)
                     ckpt.save(ckpt_dir)
 
-                if count % 5500 == 0 and count != 0:
+                if count % 5500 == 0:
                     te_iter = iter(te_gener)
                     te_idx = len(te_img_data) // 2
                     ae = 0
+                    count_j = 0
                     for j in range(te_idx):
                         images, labels = next(te_iter)
                         ae += cal_mae(model, images, labels)
-
+                        count_j += 2
                         if j % 1000 == 0:
-                            print("processing mae (test step {}) = {}".format(j + 1, ae / (j + 1)))
+                            print("processing mae (test step {}) = {}".format(j + 1, ae / count_j))
 
                     mae = ae / len(te_img_data)
                     print("MAE ({} steps) = {}".format(count + 1, mae))
